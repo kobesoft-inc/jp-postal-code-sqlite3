@@ -59,7 +59,7 @@ CREATE TABLE IF NOT EXISTS offices (
     pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
     city_code TEXT NOT NULL REFERENCES cities (city_code),
     town      TEXT NOT NULL,
-    street    TEXT NOT NULL,
+    detail    TEXT NOT NULL,
     name      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_offices_zip_code ON offices (zip_code);
@@ -132,7 +132,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
 
         jis_code = row[0]
         name = row[2]
-        pref_name, city_name, town, street = row[3], row[4], row[5], row[6]
+        pref_name, city_name, town, detail = row[3], row[4], row[5], row[6]
         zip_code = row[7]
         pref_code, city_code = jis_code[:2], jis_code
 
@@ -141,7 +141,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         prefectures.setdefault(pref_code, (pref_name, pref_name))
         cities.setdefault(city_code, (pref_code, city_name, city_name))
 
-        offices.append((zip_code, pref_code, city_code, town.strip(), street.strip(), name.strip()))
+        offices.append((zip_code, pref_code, city_code, town.strip(), detail.strip(), name.strip()))
 
     conn = sqlite3.connect(db_path)
     try:
@@ -164,7 +164,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             postal_codes,
         )
         conn.executemany(
-            "INSERT INTO offices (zip_code, pref_code, city_code, town, street, name) "
+            "INSERT INTO offices (zip_code, pref_code, city_code, town, detail, name) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             offices,
         )
