@@ -90,15 +90,14 @@ CSVの値をそのまま town に格納しています。
 | pref_code | 都道府県コード（`prefectures.pref_code` を参照） |
 | city_code | 市区町村コード（`cities.city_code` を参照） |
 | town | 町名（postal_codesと違い個別の実住所のため範囲表記は無く、正規化は行っていない） |
+| street | 小字名・丁目・番地・建物名など、townに続く詳細な住所（私書箱の場合は私書箱番号を含む） |
 | name | 事業所名・私書箱利用者名（漢字） |
-| name_kana | 事業所名・私書箱利用者名（半角カナ、原データのまま） |
 
+`town`と`street`をこの順でつなげれば、実際に郵便物を届けるのに必要な住所文字列になります。
 元データの「修正コード」が「廃止」を表す行は取り込み対象外にしており、有効なものだけを格納しています。
-小字名・丁目・番地・私書箱番号などの詳細な住所情報（元データの列）は取り込んでいません。
-郵便番号・都道府県・市区町村・町名までの補完と事業所名の特定ができれば十分、という設計です。
 
 ```sql
-SELECT pr.name AS pref, c.name AS city, b.town, b.name
+SELECT pr.name AS pref, c.name AS city, b.town, b.street, b.name
 FROM offices b
 JOIN prefectures pr ON pr.pref_code = b.pref_code
 JOIN cities c ON c.city_code = b.city_code

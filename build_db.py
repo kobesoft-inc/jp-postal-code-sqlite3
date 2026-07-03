@@ -7,7 +7,7 @@ KEN_ALL(住所の郵便番号)とJIGYOSYO(大口事業所個別番号)の2つの
 - prefectures      : 都道府県コード -> 都道府県名
 - cities           : 市区町村コード -> 市区町村名
 - postal_codes     : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
-- offices : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名, 事業所名
+- offices : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名, 番地等, 事業所名
 
 町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う
 （postal_codesのみ。officesの町名は個々の事業所固有の住所のため範囲表記が無く、正規化不要）。
@@ -59,8 +59,8 @@ CREATE TABLE IF NOT EXISTS offices (
     pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
     city_code TEXT NOT NULL REFERENCES cities (city_code),
     town      TEXT NOT NULL,
-    name      TEXT NOT NULL,
-    name_kana TEXT NOT NULL
+    street    TEXT NOT NULL,
+    name      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_offices_zip_code ON offices (zip_code);
 CREATE INDEX IF NOT EXISTS idx_offices_city_code ON offices (city_code);
@@ -131,8 +131,8 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             continue
 
         jis_code = row[0]
-        name_kana, name = row[1], row[2]
-        pref_name, city_name, town = row[3], row[4], row[5]
+        name = row[2]
+        pref_name, city_name, town, street = row[3], row[4], row[5], row[6]
         zip_code = row[7]
         pref_code, city_code = jis_code[:2], jis_code
 
@@ -141,7 +141,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         prefectures.setdefault(pref_code, (pref_name, pref_name))
         cities.setdefault(city_code, (pref_code, city_name, city_name))
 
-        offices.append((zip_code, pref_code, city_code, town.strip(), name.strip(), name_kana.strip()))
+        offices.append((zip_code, pref_code, city_code, town.strip(), street.strip(), name.strip()))
 
     conn = sqlite3.connect(db_path)
     try:
@@ -164,7 +164,7 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             postal_codes,
         )
         conn.executemany(
-            "INSERT INTO offices (zip_code, pref_code, city_code, town, name, name_kana) "
+            "INSERT INTO offices (zip_code, pref_code, city_code, town, street, name) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             offices,
         )
