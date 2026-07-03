@@ -1,9 +1,24 @@
 #!/usr/bin/env python3
-"""日本郵便のKEN_ALL(郵便番号)データをダウンロードし、SQLite3データベースを生成する。"""
+"""日本郵便のKEN_ALL(郵便番号)データをダウンロードし、SQLite3データベースを生成する。
+
+生データの列構成をそのまま持つのではなく、以下の3テーブルに正規化する。
+
+- prefectures   : 都道府県コード -> 都道府県名
+- cities        : 市区町村コード -> 市区町村名
+- postal_codes  : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
+
+町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う。
+
+- 「以下に掲載がない場合」「〇〇の次に番地がくる場合」のような、町名が存在しない
+  ことを表す自然言語の記述は空文字列に変換する。
+- 「（１〜１９丁目）」のような丁目・番地の範囲や、「（その他）」のような補足の
+  括弧書きは、町名としては不要な情報のため除去する。
+"""
 
 import argparse
 import csv
 import io
+import re
 import sqlite3
 import sys
 import urllib.request
@@ -12,33 +27,47 @@ import zipfile
 KEN_ALL_URL = "https://www.post.japanpost.jp/service/search/zipcode/download/utf/zip/utf_ken_all.zip"
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS prefectures (
+    pref_code TEXT PRIMARY KEY,
+    name      TEXT NOT NULL,
+    name_kana TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS cities (
+    city_code TEXT PRIMARY KEY,
+    pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
+    name      TEXT NOT NULL,
+    name_kana TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_cities_pref_code ON cities (pref_code);
+
 CREATE TABLE IF NOT EXISTS postal_codes (
-    jis_code        TEXT NOT NULL,
-    old_zip_code    TEXT NOT NULL,
-    zip_code        TEXT NOT NULL,
-    pref_kana       TEXT NOT NULL,
-    city_kana       TEXT NOT NULL,
-    town_kana       TEXT NOT NULL,
-    pref            TEXT NOT NULL,
-    city            TEXT NOT NULL,
-    town            TEXT NOT NULL,
-    is_multi_zip    INTEGER NOT NULL,
-    has_koaza_banchi INTEGER NOT NULL,
-    has_chome       INTEGER NOT NULL,
-    is_multi_town   INTEGER NOT NULL,
-    update_flag     INTEGER NOT NULL,
-    change_reason   INTEGER NOT NULL
+    zip_code  TEXT NOT NULL,
+    pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
+    city_code TEXT NOT NULL REFERENCES cities (city_code),
+    town      TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_postal_codes_zip_code ON postal_codes (zip_code);
+CREATE INDEX IF NOT EXISTS idx_postal_codes_city_code ON postal_codes (city_code);
 """
 
-COLUMNS = [
-    "jis_code", "old_zip_code", "zip_code",
-    "pref_kana", "city_kana", "town_kana",
-    "pref", "city", "town",
-    "is_multi_zip", "has_koaza_banchi", "has_chome", "is_multi_town",
-    "update_flag", "change_reason",
+# 町名が存在しないことを表す自然言語の記述（KEN_ALLの慣習表記）
+NO_TOWN_PATTERNS = [
+    re.compile(r"^以下に掲載がない場合$"),
+    re.compile(r".*の次に.*番地.*くる場合$"),
 ]
+
+# 丁目・番地の範囲や補足を表す括弧書き（例: （１〜１９丁目）, （その他）, （次のビルを除く））
+PAREN_PATTERN = re.compile(r"[（(][^（）()]*[）)]")
+
+
+def clean_town(raw_town):
+    town = raw_town.strip()
+    for pattern in NO_TOWN_PATTERNS:
+        if pattern.match(town):
+            return ""
+    town = PAREN_PATTERN.sub("", town).strip()
+    return town
 
 
 def fetch_csv_rows(url):
@@ -52,18 +81,55 @@ def fetch_csv_rows(url):
 
 
 def build_database(db_path, url):
+    prefectures = {}
+    cities = {}
+    postal_codes = []
+    seen_postal_codes = set()
+
+    for row in fetch_csv_rows(url):
+        jis_code = row[0]
+        zip_code = row[2]
+        pref_kana, city_kana = row[3], row[4]
+        pref_name, city_name = row[6], row[7]
+        pref_code, city_code = jis_code[:2], jis_code
+
+        prefectures.setdefault(pref_code, (pref_name, pref_kana))
+        cities.setdefault(city_code, (pref_code, city_name, city_kana))
+
+        town = clean_town(row[8])
+        key = (zip_code, city_code, town)
+        if key in seen_postal_codes:
+            continue
+        seen_postal_codes.add(key)
+        postal_codes.append((zip_code, pref_code, city_code, town))
+
     conn = sqlite3.connect(db_path)
     try:
         conn.executescript(SCHEMA)
         conn.execute("DELETE FROM postal_codes")
-        placeholders = ",".join("?" for _ in COLUMNS)
+        conn.execute("DELETE FROM cities")
+        conn.execute("DELETE FROM prefectures")
+
         conn.executemany(
-            f"INSERT INTO postal_codes ({','.join(COLUMNS)}) VALUES ({placeholders})",
-            fetch_csv_rows(url),
+            "INSERT INTO prefectures (pref_code, name, name_kana) VALUES (?, ?, ?)",
+            [(code, name, kana) for code, (name, kana) in prefectures.items()],
+        )
+        conn.executemany(
+            "INSERT INTO cities (city_code, pref_code, name, name_kana) VALUES (?, ?, ?, ?)",
+            [(code, pref_code, name, kana) for code, (pref_code, name, kana) in cities.items()],
+        )
+        conn.executemany(
+            "INSERT INTO postal_codes (zip_code, pref_code, city_code, town) VALUES (?, ?, ?, ?)",
+            postal_codes,
         )
         conn.commit()
-        count = conn.execute("SELECT COUNT(*) FROM postal_codes").fetchone()[0]
-        print(f"{count} 件の郵便番号データを {db_path} に書き込みました。", file=sys.stderr)
+
+        print(
+            f"prefectures: {len(prefectures)} 件, "
+            f"cities: {len(cities)} 件, "
+            f"postal_codes: {len(postal_codes)} 件 を {db_path} に書き込みました。",
+            file=sys.stderr,
+        )
     finally:
         conn.close()
 
