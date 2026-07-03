@@ -63,7 +63,7 @@ jobs:
           NEW_JIGYOSYO_MD5: ${{ steps.check.outputs.new_jigyosyo_md5 }}
         run: |
           TAG="db-$(date -u +'%Y-%m-%d')-${NEW_KEN_ALL_MD5:0:8}-${NEW_JIGYOSYO_MD5:0:8}"
+          NOTES="KEN_ALL CSV MD5: ${NEW_KEN_ALL_MD5}"$'\n'"JIGYOSYO CSV MD5: ${NEW_JIGYOSYO_MD5}"
           gh release create "$TAG" jp_postal_code.db \
             --title "郵便番号データ $(date -u +'%Y-%m-%d')" \
-            --notes "KEN_ALL CSV MD5: ${NEW_KEN_ALL_MD5}
-JIGYOSYO CSV MD5: ${NEW_JIGYOSYO_MD5}"
+            --notes "$NOTES"
