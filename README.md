@@ -79,7 +79,7 @@ CSVの値をそのまま town に格納しています。
 
 ## 自動更新（GitHub Actions）
 
-`.github/workflows/update-db.yml` により、毎週月曜 09:00 JST（`cron: "0 0 * * 1"` UTC）に
+`.github/workflows/update-db.yml` により、毎日 09:00 JST（`cron: "0 0 * * *"` UTC）に
 以下を自動実行します。`workflow_dispatch` にも対応しているため、GitHubのActionsタブから
 手動実行も可能です。
 
