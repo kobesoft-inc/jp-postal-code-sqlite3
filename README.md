@@ -1,4 +1,4 @@
-# jp-postal-code-sqlite3
+# jp-postal-code-db
 
 日本郵便が公開している郵便番号データを、そのまま使えるSQLite3データベースにして配布しています。
 毎日自動チェックし、元データが更新されていれば追随します（[GitHub Actions](.github/workflows/update-db.yml)）。
@@ -8,15 +8,15 @@
 
 ## ダウンロード
 
-以下のURLから常に最新版を取得できます（[Releases](https://github.com/kobesoft-inc/jp-postal-code-sqlite3/releases)）。
+以下のURLから常に最新版を取得できます（[Releases](https://github.com/kobesoft-inc/jp-postal-code-db/releases)）。
 
 ```
-https://github.com/kobesoft-inc/jp-postal-code-sqlite3/releases/latest/download/jp_postal_code.db
+https://github.com/kobesoft-inc/jp-postal-code-db/releases/latest/download/jp_postal_code.db
 ```
 
 ```bash
 curl -L -o jp_postal_code.db \
-  https://github.com/kobesoft-inc/jp-postal-code-sqlite3/releases/latest/download/jp_postal_code.db
+  https://github.com/kobesoft-inc/jp-postal-code-db/releases/latest/download/jp_postal_code.db
 ```
 
 ## テーブル構成
