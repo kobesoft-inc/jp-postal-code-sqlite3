@@ -7,7 +7,10 @@ KEN_ALL(住所の郵便番号)とJIGYOSYO(大口事業所個別番号)の2つの
 - prefectures      : 都道府県コード -> 都道府県名
 - cities           : 市区町村コード -> 市区町村名
 - postal_codes     : 郵便番号 -> 都道府県コード, 市区町村コード, 町名(住所続き)
-- offices : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名, 番地等, 事業所名
+- offices          : 郵便番号(大口事業所個別番号) -> 都道府県コード, 市区町村コード, 町名,
+  番地等, 事業所名, 廃止フラグ(is_abolished)
+  - 廃止された個別番号（修正コード「5」）も除外せずに取り込み、is_abolishedに1を立てる。
+    is_abolishedにインデックスを作成しているため、有効なものだけの絞り込みは高速に行える。
 
 町名はアプリケーションからそのまま住所文字列に使えるよう、以下の正規化を行う
 （postal_codesのみ。officesの町名は個々の事業所固有の住所のため範囲表記が無く、正規化不要）。
@@ -55,15 +58,17 @@ CREATE INDEX IF NOT EXISTS idx_postal_codes_zip_code ON postal_codes (zip_code);
 CREATE INDEX IF NOT EXISTS idx_postal_codes_city_code ON postal_codes (city_code);
 
 CREATE TABLE IF NOT EXISTS offices (
-    zip_code  TEXT NOT NULL,
-    pref_code TEXT NOT NULL REFERENCES prefectures (pref_code),
-    city_code TEXT NOT NULL REFERENCES cities (city_code),
-    town      TEXT NOT NULL,
-    detail    TEXT NOT NULL,
-    name      TEXT NOT NULL
+    zip_code     TEXT NOT NULL,
+    pref_code    TEXT NOT NULL REFERENCES prefectures (pref_code),
+    city_code    TEXT NOT NULL REFERENCES cities (city_code),
+    town         TEXT NOT NULL,
+    detail       TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    is_abolished INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_offices_zip_code ON offices (zip_code);
 CREATE INDEX IF NOT EXISTS idx_offices_city_code ON offices (city_code);
+CREATE INDEX IF NOT EXISTS idx_offices_is_abolished ON offices (is_abolished);
 """
 
 # 町名が存在しないことを表す自然言語の記述（KEN_ALLの慣習表記）
@@ -127,21 +132,21 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
         postal_codes.append((zip_code, pref_code, city_code, town))
 
     for row in fetch_csv_rows(jigyosyo_url, encoding="cp932"):
-        if row[12] == JIGYOSYO_ABOLISHED_CODE:
-            continue
-
         jis_code = row[0]
         name = row[2]
         pref_name, city_name, town, detail = row[3], row[4], row[5], row[6]
         zip_code = row[7]
         pref_code, city_code = jis_code[:2], jis_code
+        is_abolished = 1 if row[12] == JIGYOSYO_ABOLISHED_CODE else 0
 
         # JIGYOSYOには都道府県名・市区町村名のカナが無いため、KEN_ALLに無い
         # コードが例外的に出てきた場合のみ漢字表記をカナ代わりに補う
         prefectures.setdefault(pref_code, (pref_name, pref_name))
         cities.setdefault(city_code, (pref_code, city_name, city_name))
 
-        offices.append((zip_code, pref_code, city_code, town.strip(), detail.strip(), name.strip()))
+        offices.append(
+            (zip_code, pref_code, city_code, town.strip(), detail.strip(), name.strip(), is_abolished)
+        )
 
     conn = sqlite3.connect(db_path)
     try:
@@ -164,8 +169,8 @@ def build_database(db_path, ken_all_url, jigyosyo_url):
             postal_codes,
         )
         conn.executemany(
-            "INSERT INTO offices (zip_code, pref_code, city_code, town, detail, name) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO offices (zip_code, pref_code, city_code, town, detail, name, is_abolished) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             offices,
         )
         conn.commit()

@@ -72,7 +72,8 @@ WHERE p.zip_code = '1000001';
 
 配達物数の多い事業所や私書箱利用者に割り当てられる、専用の郵便番号です。1つの建物・組織に
 複数の郵便番号が割り当てられることもあれば、逆に同じ郵便番号を複数の部署・関連組織で共有して
-いることもあります（例: 同一キャンパス内の大学本部・各学部）。廃止された番号は含まれません。
+いることもあります（例: 同一キャンパス内の大学本部・各学部）。廃止された番号も含めて収録して
+います。
 
 | カラム | 内容 |
 | --- | --- |
@@ -82,15 +83,20 @@ WHERE p.zip_code = '1000001';
 | town | 町名（`postal_codes`と違い個別の実住所のため範囲表記は無く、正規化していない） |
 | detail | 町名に続く詳細住所（丁目・番地・建物名等。私書箱の場合は私書箱番号を含む） |
 | name | 事業所名・私書箱利用者名（漢字） |
+| is_abolished | 廃止済みの個別番号かどうか（0=有効, 1=廃止済み） |
 
 `town`と`detail`をこの順でつなげれば、実際に郵便物を届けるのに必要な住所文字列になります。
+現存する番号だけが欲しい場合は`is_abolished = 0`で絞り込んでください。インデックスがあるため
+高速です。
 
 ```sql
+-- 現存する番号だけを検索（インデックスが使われる）
 SELECT pr.name AS pref, c.name AS city, o.town, o.detail, o.name
 FROM offices o
 JOIN prefectures pr ON pr.pref_code = o.pref_code
 JOIN cities c ON c.city_code = o.city_code
-WHERE o.zip_code = '1008798';
+WHERE o.zip_code = '1008798'
+  AND o.is_abolished = 0;
 ```
 
 ## 更新頻度
