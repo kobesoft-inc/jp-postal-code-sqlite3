@@ -30,7 +30,6 @@ curl -L -o jp_postal_code.db \
 | --- | --- |
 | prefecture_code | 都道府県コード（2桁、例: `13`） |
 | name | 都道府県名（例: 東京都） |
-| name_kana | 都道府県名カナ |
 
 ### cities（市区町村マスタ）
 
@@ -39,7 +38,6 @@ curl -L -o jp_postal_code.db \
 | city_code | 市区町村コード（5桁 = 都道府県コード2桁 + 市区町村コード3桁。例: `13101`） |
 | prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | name | 市区町村名（例: 千代田区） |
-| name_kana | 市区町村名カナ |
 
 ### postal_codes（郵便番号 → 住所）
 
@@ -80,7 +78,7 @@ WHERE p.zip_code = '1000001';
 | zip_code | 郵便番号（7桁、ハイフンなし。同じ番号が複数行に出てくることがある） |
 | prefecture_code | 都道府県コード（`prefectures.prefecture_code` を参照） |
 | city_code | 市区町村コード（`cities.city_code` を参照） |
-| town | 町名（`postal_codes`と違い個別の実住所のため範囲表記は無く、正規化していない） |
+| town | 町名（`postal_codes.town`の表記に正規化済み。下記参照） |
 | detail | 町名に続く詳細住所（丁目・番地・建物名等。私書箱の場合は私書箱番号を含む） |
 | name | 事業所名・私書箱利用者名（漢字） |
 | is_enabled | 現在有効な個別番号かどうか（1=有効, 0=廃止済み） |
@@ -88,6 +86,13 @@ WHERE p.zip_code = '1000001';
 `town`と`detail`をこの順でつなげれば、実際に郵便物を届けるのに必要な住所文字列になります。
 現存する番号だけが欲しい場合は`is_enabled = 1`で絞り込んでください。インデックスがあるため
 高速です。
+
+**town列の正規化について**: JIGYOSYOの町域名欄は、同じ町を指していても`postal_codes`側と
+表記が異なることがあります（例:「北１条西」と「北一条西」のような算用数字/漢数字の違い、
+「字」の有無）。そのため、町域名と番地等欄を連結した文字列に対して、同一市区町村内の
+`postal_codes.town`の一覧から最長一致するものを探し、一致すればその表記に揃えています
+（一致しない場合はJIGYOSYOの値をそのまま使用）。実データでは約93%が`postal_codes.town`と
+同じ表記に揃っています。
 
 ```sql
 -- 現存する番号だけを検索（インデックスが使われる）
