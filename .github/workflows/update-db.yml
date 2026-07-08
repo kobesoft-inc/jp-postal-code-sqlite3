@@ -4,7 +4,12 @@ on:
   schedule:
     # 毎日 00:00 UTC (= 09:00 JST)
     - cron: "0 0 * * *"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "元データのMD5に変化がなくてもリリースを作成する"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -34,7 +39,12 @@ jobs:
 
           if [ "$NEW_KEN_ALL_MD5" = "$OLD_KEN_ALL_MD5" ] && [ "$NEW_JIGYOSYO_MD5" = "$OLD_JIGYOSYO_MD5" ]; then
             echo "元データのMD5に変化なし"
-            echo "changed=false" >> "$GITHUB_OUTPUT"
+            if [ "${{ github.event.inputs.force }}" = "true" ]; then
+              echo "forceが指定されたため、変化なしでもリリースを作成します"
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "changed=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "元データのMD5が変化: KEN_ALL $OLD_KEN_ALL_MD5 -> $NEW_KEN_ALL_MD5 / JIGYOSYO $OLD_JIGYOSYO_MD5 -> $NEW_JIGYOSYO_MD5"
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -52,8 +62,12 @@ jobs:
           echo "${{ steps.check.outputs.new_ken_all_md5 }}" > ken_all.csv.md5
           echo "${{ steps.check.outputs.new_jigyosyo_md5 }}" > jigyosyo.csv.md5
           git add ken_all.csv.md5 jigyosyo.csv.md5
-          git commit -m "Update source checksums ($(date -u +'%Y-%m-%d'))"
-          git push
+          if git diff --cached --quiet; then
+            echo "チェックサムに変化なし（forceによる実行）のためコミットをスキップ"
+          else
+            git commit -m "Update source checksums ($(date -u +'%Y-%m-%d'))"
+            git push
+          fi
 
       - name: Create GitHub Release
         id: release
